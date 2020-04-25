@@ -3,7 +3,7 @@ DOCKER_IMAGE_WEB=app-web:latest
 DOCKER_IMAGE_API=app-api:latest
 SHELL_GRAYLOG_GELF=graylog-gelf.sh
 
-if [ "$(docker info | grep Swarm | sed 's/Swarm: //g')" == "inactive" ]; then
+if [ "$(docker info --format '{{.Swarm.LocalNodeState}}')" == "inactive" ]; then
 echo "Changing to swarm mode"
     sudo docker swarm init
 else
