@@ -42,6 +42,6 @@ echo "Grafana: http://localhost:3000"
 echo "Prometheus: http://localhost:9090"
 echo "Prom Node: http://localhost:9100/metrics"
 echo "cAdvisor: http://localhost:8080"
-echo "Traefik: http://localhost:"
+echo "Traefik: http://localhost:8081"
 
-echo "Finish"
+echo "FINISH"
