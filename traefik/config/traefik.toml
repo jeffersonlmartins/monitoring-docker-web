@@ -1,0 +1,20 @@
+logLevel = "ERROR"
+
+defaultEntryPoints = ["http"]
+
+[entryPoints]
+  [entryPoints.http]
+  address = ":80"
+
+[retry]
+
+[file]
+watch = true
+
+[web]
+address = ":8080"
+
+[docker]
+endpoint = "unix:///var/run/docker.sock"
+domain = "localhost"
+exposedByDefault = false

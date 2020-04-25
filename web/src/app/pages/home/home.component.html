@@ -1,0 +1,33 @@
+<h3>Comentários</h3>
+
+<nz-table #basicTable [nzData]="comments" [nzFrontPagination]="false">
+  <thead>
+    <tr>
+      <th>Nome</th>
+      <th>Email</th>
+      <th>Comentário</th>
+      <th>Ação</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr *ngFor="let item of comments">
+      <td>{{ item.name }}</td>
+      <td>{{ item.email }}</td>
+      <td>{{ item.comment }}</td>
+      <td>
+        <a (click)="editar(item)">Editar</a>
+        <nz-divider nzType="vertical"></nz-divider>
+        <a nz-popconfirm
+           nzPopconfirmTitle="Tem certeza que deseja remover esse comentário?"
+           nzPopconfirmPlacement="bottom"
+           (nzOnConfirm)="remover(item)">Remover</a>
+      </td>
+    </tr>
+  </tbody>
+</nz-table>
+
+<br>
+
+<a routerLink="/create">
+    <button nz-button nzType="primary" >Criar novo</button>
+</a>

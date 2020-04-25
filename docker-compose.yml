@@ -1,0 +1,233 @@
+version: '3.7'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:6.8.2
+    ports:
+      - "9200:9200"
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=localhost
+      - network.host=0.0.0.0
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    networks:
+      - monitoring
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch
+
+  mongo:
+    image: mongo:4.0
+    networks:
+      - monitoring
+    volumes:
+      - mongo:/data
+
+  graylog:
+    image: graylog/graylog:3.1
+    command: 
+      - graylog-gelf.sh
+    ports:
+      - "9000:9000"
+      - "12201:12201/udp"
+      - "1514:1514/udp"
+      - "12900:12900"
+      - "5044:5044"
+      - "5044:5044/udp"
+    environment:
+      GRAYLOG_HTTP_EXTERNAL_URI: "http://127.0.0.1:9000/"
+    networks:
+      - monitoring
+    depends_on:
+      - elasticsearch
+      - mongo
+    volumes:
+      - ./graylog/config/graylog.conf:/usr/share/graylog/data/config/graylog.conf
+      - ./graylog/config/log4j2.xml:/usr/share/graylog/data/config/log4j2.xml
+      - graylog_data:/usr/share/graylog/data
+
+  mysql:
+    image: mysql:5.7
+    networks:
+      - monitoring
+    environment:
+      - MYSQL_ROOT_PASSWORD=MysqlPassword
+      - MYSQL_ROOT_HOST=%
+      - MYSQL_DATABASE=app_web
+      - MYSQL_USER=app_user
+      - MYSQL_PASSWORD=MysqlPassword1
+    ports:
+      - 3306
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/config/mysql.cnf:/etc/mysql/conf.d/mysql.cnf
+    healthcheck:
+      start_period: 10s
+      test: mysqladmin -p${MYSQL_ROOT_PASSWORD} ping -h localhost
+      interval: 20s
+      timeout: 10s
+      retries: 3
+
+  api:
+    image: app-api
+    networks:
+      - monitoring
+    depends_on:
+      - mysql
+    ports:
+      - 3333
+    labels:
+      - "traefik.frontend.rule=Host:localhost;PathPrefixStrip:/ipa"
+      - "traefik.port=3333"
+      - "traefik.docker.network=monitoring"
+      - "traefik.backend=app-api"
+      - "traefik.frontend.entryPoints=http"
+    deploy:
+      replicas: 3    
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+  web:
+    image: app-web:latest
+    networks:
+      - monitoring
+    depends_on:
+      - api
+    ports:
+      - 81
+    labels:
+      - "traefik.frontend.rule=Host:localhost;PathPrefixStrip:/"
+      - "traefik.port=81"
+      - "traefik.docker.network=monitoring"
+      - "traefik.backend=app-web"
+      - "traefik.frontend.entryPoints=http"
+    deploy:
+      replicas: 3    
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+  grafana:
+    image: grafana/grafana:latest
+    networks:
+      - monitoring
+    ports:
+      - 3000:3000
+    env_file:
+      - "grafana/.env"
+    user: "0"
+    volumes: 
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning
+
+  prometheus:
+    image: prom/prometheus:v2.1.0
+    networks:
+      - monitoring
+    volumes:
+      - ./prometheus/config/:/etc/prometheus/
+    ports:
+      - 9090:9090
+    depends_on:
+      - cadvisor
+      - node-exporter 
+    deploy:
+      mode: replicated
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+  node-exporter:
+    image: prom/node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command: 
+      - '--path.procfs=/host/proc' 
+      - '--path.sysfs=/host/sys'
+      - --collector.filesystem.ignored-mount-points
+      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
+    ports:
+      - 9100:9100
+    networks:
+      - monitoring
+    deploy:
+      mode: replicated
+
+  cadvisor:
+    image: google/cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - 8080
+    networks:
+      - monitoring
+    deploy:
+      mode: replicated
+
+  traefik:
+    image: traefik:v1.7.24-alpine
+    command: '--docker --docker.watch --web --debug'
+    networks:
+      - monitoring
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/config/traefik.toml:/traefik.toml
+    labels:
+      - "traefik.enable=false" 
+
+  logspout:
+    image: vincit/logspout-gelf:latest
+    networks:
+      - monitoring
+    ports:
+      - 8900:80
+    volumes:
+      - /etc/hostname:/etc/host_hostname:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      gelf://graylog:12201
+    depends_on:
+      - graylog
+    deploy:
+      mode: replicated
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+
+volumes:
+  mongo:
+  graylog_data:
+  elasticsearch_data:
+  mysql_data:
+  grafana_data:
+
+networks:
+  monitoring:
+    external: true
